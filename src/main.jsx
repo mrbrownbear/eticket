@@ -485,93 +485,64 @@ function createVolumetricCloudField({
   color = 0xf4f7f8
 }) {
   const rand = mulberry32(seed)
-  const group = new THREE.Group()
-  group.name = 'FACF_CloudVolume_' + seed
-
-  const canvas = document.createElement('canvas')
-  canvas.width = canvas.height = 256
-  const ctx = canvas.getContext('2d')
-  const gradient = ctx.createRadialGradient(118, 104, 8, 128, 128, 124)
-  gradient.addColorStop(0, 'rgba(255,255,255,.98)')
-  gradient.addColorStop(.28, 'rgba(250,252,253,.86)')
-  gradient.addColorStop(.58, 'rgba(225,234,239,.48)')
-  gradient.addColorStop(.82, 'rgba(184,199,209,.14)')
-  gradient.addColorStop(1, 'rgba(145,164,176,0)')
-  ctx.fillStyle = gradient
-  ctx.fillRect(0, 0, 256, 256)
-
-  const texture = new THREE.CanvasTexture(canvas)
-  texture.colorSpace = THREE.SRGBColorSpace
-  texture.minFilter = THREE.LinearMipmapLinearFilter
-  texture.magFilter = THREE.LinearFilter
-  texture.generateMipmaps = true
-
-  const baseColor = new THREE.Color(color)
-  const materials = []
-
+  const total = cloudCount * blobsPerCloud
+  const geometry = new THREE.IcosahedronGeometry(1, detail)
+  const material = new THREE.MeshPhysicalMaterial({
+    color,
+    roughness: 1,
+    metalness: 0,
+    transparent: true,
+    opacity,
+    depthWrite: false,
+    depthTest: true,
+    side: THREE.DoubleSide,
+    envMapIntensity: .28,
+    vertexColors: true
+  })
+  const mesh = new THREE.InstancedMesh(geometry, material, total)
+  mesh.name = `FACF_CloudVolume_${seed}`
+  mesh.frustumCulled = false
+  const dummy = new THREE.Object3D()
+  const tint = new THREE.Color()
+  let index = 0
   for (let c = 0; c < cloudCount; c++) {
-    const cloud = new THREE.Group()
     const cx = (rand() - .5) * spreadX
-    const cy = (rand() - .48) * spreadY
+    const cy = (rand() - .46) * spreadY
     const cz = mix(nearZ, farZ, rand())
-    const cloudScale = scale * (.68 + rand() * .9)
-
+    const cloudScale = scale * (.62 + rand() * .9)
+    const flatten = .34 + rand() * .22
     for (let b = 0; b < blobsPerCloud; b++) {
-      const shade = .78 + rand() * .22
-      const tint = baseColor.clone().multiplyScalar(shade).lerp(new THREE.Color(0xffffff), .18 + rand() * .14)
-      const material = new THREE.SpriteMaterial({
-        map: texture,
-        color: tint,
-        transparent: true,
-        opacity: opacity * (.56 + rand() * .45),
-        depthWrite: false,
-        depthTest: true,
-        blending: THREE.NormalBlending,
-        fog: true
-      })
-      materials.push(material)
-
-      const puff = new THREE.Sprite(material)
       const angle = rand() * Math.PI * 2
-      const radius = cloudScale * Math.pow(rand(), .72) * .72
-      puff.position.set(
-        Math.cos(angle) * radius,
-        (rand() - .5) * cloudScale * .28,
-        Math.sin(angle) * radius * .9
+      const radius = cloudScale * Math.pow(rand(), .62) * .92
+      const localScale = cloudScale * (.34 + rand() * .52)
+      dummy.position.set(
+        cx + Math.cos(angle) * radius,
+        cy + (rand() - .5) * cloudScale * .44,
+        cz + Math.sin(angle) * radius * 1.18
       )
-      const puffScale = cloudScale * (.55 + rand() * .75)
-      puff.scale.set(
-        puffScale * (1.25 + rand() * .65),
-        puffScale * (.72 + rand() * .35),
-        1
+      dummy.scale.set(
+        localScale * (1.05 + rand() * .85),
+        localScale * flatten * (.72 + rand() * .55),
+        localScale * (.78 + rand() * .95)
       )
-      cloud.add(puff)
+      dummy.rotation.set(rand() * .22, rand() * Math.PI, rand() * .18)
+      dummy.updateMatrix()
+      mesh.setMatrixAt(index, dummy.matrix)
+      const shade = .78 + rand() * .24
+      tint.setRGB(shade, shade * (.99 + rand() * .018), Math.min(1, shade * 1.025))
+      mesh.setColorAt(index, tint)
+      index++
     }
-
-    cloud.position.set(cx, cy, cz)
-    cloud.rotation.y = (rand() - .5) * .35
-    group.add(cloud)
   }
-
-  group.userData.baseOpacity = opacity
-  group.userData.materials = materials
-  group.userData.texture = texture
-  group.userData.phase = rand() * Math.PI * 2
-  group.userData.speed = 2.2 + rand() * 2.8
-  group.userData.setOpacity = value => {
-    const ratio = value / Math.max(.0001, opacity)
-    materials.forEach((material, i) => {
-      material.opacity = clamp(opacity * (.48 + (i % 7) * .065) * ratio, 0, .42)
-    })
-  }
-  group.userData.setColor = (value, t = 1) => {
-    materials.forEach(material => material.color.lerp(value, Math.min(1, t * .42)))
-  }
-  group.userData.dispose = () => {
-    materials.forEach(material => material.dispose())
-    texture.dispose()
-  }
-  return group
+  mesh.instanceMatrix.needsUpdate = true
+  if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true
+  mesh.userData.baseOpacity = opacity
+  mesh.userData.phase = rand() * Math.PI * 2
+  mesh.userData.speed = 2.2 + rand() * 2.8
+  mesh.userData.setOpacity = value => { material.opacity = value }
+  mesh.userData.setColor = (value, t = 1) => { material.color.lerp(value, t) }
+  mesh.userData.dispose = () => { geometry.dispose(); material.dispose() }
+  return mesh
 }
 
 function createAirflowStreaks(count = 90, seed = 211) {
@@ -1380,7 +1351,7 @@ function App() {
       return
     }
 
-    const maxDpr = Math.min(window.devicePixelRatio || 1, isMobile ? 1.28 : isTablet ? 1.58 : 1.9)
+    const maxDpr = Math.min(window.devicePixelRatio || 1, isMobile ? 1.28 : isTablet ? 1.5 : 1.75)
     const minDpr = isMobile ? .9 : 1
     let currentDpr = maxDpr
     renderer.setPixelRatio(currentDpr)
@@ -1427,7 +1398,7 @@ function App() {
     const sunVector = new THREE.Vector3()
 
     const composer = new EffectComposer(renderer)
-    composer.setPixelRatio(Math.min(currentDpr, isMobile ? 1.0 : 1.4))
+    composer.setPixelRatio(Math.min(currentDpr, isMobile ? 1.0 : 1.3))
     composer.addPass(new RenderPass(scene, camera))
     const gtaoPass = new GTAOPass(scene, camera, Math.max(1, Math.floor(window.innerWidth * .72)), Math.max(1, Math.floor(window.innerHeight * .72)))
     gtaoPass.blendIntensity = .42
@@ -1886,7 +1857,7 @@ function App() {
       currentDpr = dpr
       renderer.setPixelRatio(currentDpr)
       renderer.setSize(window.innerWidth, window.innerHeight, false)
-      composer.setPixelRatio(Math.min(currentDpr, isMobile ? 1.0 : 1.4))
+      composer.setPixelRatio(Math.min(currentDpr, isMobile ? 1.0 : 1.3))
       composer.setSize(window.innerWidth, window.innerHeight)
       cloudsNear.userData.setDpr(currentDpr)
       cloudsMid.userData.setDpr(currentDpr)
