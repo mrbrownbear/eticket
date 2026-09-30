@@ -10,16 +10,21 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - name: Restore normal source tree
         shell: bash
         run: |
           python - <<'PY'
           from pathlib import Path
-          import gzip, json
+          import gzip, subprocess, json
           root = Path('.')
           gz = root / 'src/main.jsx.gz'
           if gz.exists():
-              (root / 'src/main.jsx').write_bytes(gzip.decompress(gz.read_bytes()))
+              data = gz.read_bytes()
+          else:
+              data = subprocess.check_output(['git','show','1d7b7d05b9970bf26638a46202137586ec69654e:src/main.jsx.gz'])
+          (root / 'src/main.jsx').write_bytes(gzip.decompress(data))
           pkg = json.loads((root / 'package.json').read_text())
           pkg['scripts']['predev'] = 'node scripts/fetch-single-model.mjs'
           pkg['scripts']['prebuild'] = 'node scripts/fetch-single-model.mjs'
