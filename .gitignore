@@ -1,6 +1,5 @@
 node_modules
 dist
-src/main.jsx
 public/assets/facf-787-single.glb
 .env
 .env.local
